@@ -1,16 +1,28 @@
-import React, { Component } from 'react';
+import { Component } from 'react';
 
-// Konfigurasi Parameter (Tetap di luar kelas karena bersifat statis/konstan)
+// Konfigurasi Parameter — range disesuaikan dengan distribusi dataset sesungguhnya
 const featureConfig = {
-  ph: { icon: '🧪', label: 'Tingkat pH', unit: 'pH', min: 6.5, max: 8.5 },
-  Hardness: { icon: '🪨', label: 'Kekerasan Air', unit: 'mg/L', min: 0, max: 200 },
-  Solids: { icon: '🧂', label: 'TDS (Padatan)', unit: 'ppm', min: 0, max: 500 },
-  Chloramines: { icon: '💧', label: 'Kloramin', unit: 'ppm', min: 0, max: 4 },
-  Sulfate: { icon: '🌋', label: 'Sulfat', unit: 'mg/L', min: 0, max: 250 },
-  Conductivity: { icon: '⚡', label: 'Konduktivitas', unit: 'μS/cm', min: 0, max: 400 },
-  Organic_carbon: { icon: '🍂', label: 'Karbon Organik', unit: 'ppm', min: 0, max: 10 },
-  Trihalomethanes: { icon: '🔬', label: 'Trihalometana', unit: 'μg/L', min: 0, max: 80 },
-  Turbidity: { icon: '🌫️', label: 'Kekeruhan', unit: 'NTU', min: 0, max: 5 }
+  ph:              { icon: '🧪', label: 'Tingkat pH',       unit: 'pH',    min: 6.5,   max: 8.5   },
+  Hardness:        { icon: '🪨', label: 'Kekerasan Air',    unit: 'mg/L',  min: 150,   max: 250   },
+  Solids:          { icon: '🧂', label: 'TDS (Padatan)',    unit: 'ppm',   min: 10000, max: 35000 },
+  Chloramines:     { icon: '💧', label: 'Kloramin',         unit: 'ppm',   min: 5,     max: 9     },
+  Sulfate:         { icon: '🌋', label: 'Sulfat',           unit: 'mg/L',  min: 280,   max: 400   },
+  Conductivity:    { icon: '⚡', label: 'Konduktivitas',    unit: 'μS/cm', min: 300,   max: 600   },
+  Organic_carbon:  { icon: '🍂', label: 'Karbon Organik',  unit: 'ppm',   min: 8,     max: 20    },
+  Trihalomethanes: { icon: '🔬', label: 'Trihalometana',   unit: 'μg/L',  min: 30,    max: 100   },
+  Turbidity:       { icon: '🌫️', label: 'Kekeruhan',        unit: 'NTU',   min: 1.5,   max: 5     }
+};
+
+// Preset sampel nyata dari dataset (nilai yang sudah diverifikasi)
+const PRESET_AMAN = {
+  ph: '9.02', Hardness: '128.10', Solids: '19859.68', Chloramines: '8.02',
+  Sulfate: '300.15', Conductivity: '451.14', Organic_carbon: '14.77',
+  Trihalomethanes: '73.78', Turbidity: '3.99'
+};
+const PRESET_TIDAK_AMAN = {
+  ph: '2.50', Hardness: '380.00', Solids: '55000.00', Chloramines: '12.50',
+  Sulfate: '475.00', Conductivity: '720.00', Organic_carbon: '26.00',
+  Trihalomethanes: '118.00', Turbidity: '6.50'
 };
 
 // Deklarasi Kelas (OOP)
@@ -49,11 +61,16 @@ class App extends Component {
         ...prevState.formData,
         [name]: value
       },
-      result: null // Reset hasil setiap ada input baru
+      result: null
     }));
   };
 
-  // 4. Metode Kelas: Menangani pengiriman form (Fetch API)
+  // 3b. Metode Kelas: Memuat preset nilai contoh
+  loadPreset = (preset) => {
+    this.setState({ formData: { ...preset }, result: null, error: '' });
+  };
+
+  // 4. Metode Kelas: Menangani pengiriman form (Fetch API ke Backend Flask)
   handleSubmit = async (e) => {
     e.preventDefault();
     this.setState({ loading: true, error: '', result: null });
@@ -73,15 +90,20 @@ class App extends Component {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/predict', {
+      // Kirim data ke backend Flask yang memuat model .pkl langsung
+      const response = await fetch('/api/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) throw new Error('Koneksi API terputus.');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
+      }
+
       const data = await response.json();
-      
+      // data.potability: 0 = tidak aman, 1 = aman
       this.setState({ result: data.potability });
     } catch (err) {
       this.setState({ error: 'Sistem Error: ' + err.message });
@@ -138,6 +160,13 @@ class App extends Component {
             <div style={styles.panelHeader}>
               <h2 style={styles.panelTitle}>Input Parameter Lab</h2>
               <p style={styles.panelSubtitle}>Pendekatan Object-Oriented Programming (Class Component)</p>
+              <div style={styles.presetRow}>
+                <span style={styles.presetLabel}>Contoh nilai:</span>
+                <button type="button" style={styles.presetBtnAman}
+                  onClick={() => this.loadPreset(PRESET_AMAN)}>✅ Isi Contoh AMAN</button>
+                <button type="button" style={styles.presetBtnBahaya}
+                  onClick={() => this.loadPreset(PRESET_TIDAK_AMAN)}>❌ Isi Contoh TERCEMAR</button>
+              </div>
             </div>
 
             <form onSubmit={this.handleSubmit} id="water-form">
@@ -163,6 +192,10 @@ class App extends Component {
                       <div style={{ ...styles.statusBadge, backgroundColor: status.bg, color: status.color }}>
                         <span style={styles.statusDot(status.color)}></span>
                         {status.text}
+                      </div>
+
+                      <div style={styles.rangeText}>
+                        Range aman: {featureConfig[key].min.toLocaleString()} – {featureConfig[key].max.toLocaleString()} {featureConfig[key].unit}
                       </div>
                     </div>
                   );
@@ -218,6 +251,10 @@ class App extends Component {
 
 // --- STYLING ---
 const styles = {
+  presetRow: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', flexWrap: 'wrap' },
+  presetLabel: { fontSize: '13px', color: '#64748b', fontWeight: '500' },
+  presetBtnAman: { padding: '6px 14px', backgroundColor: '#ecfdf5', color: '#059669', border: '1.5px solid #34d399', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  presetBtnBahaya: { padding: '6px 14px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1.5px solid #f87171', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
   dashboard: { minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: '"Inter", sans-serif' },
   header: { backgroundColor: '#ffffff', padding: '16px 32px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0' },
   logo: { fontSize: '20px', fontWeight: '800', color: '#0f766e' },
@@ -237,6 +274,7 @@ const styles = {
   unit: { fontSize: '12px', color: '#94a3b8', fontWeight: '500' },
   statusBadge: { marginTop: 'auto', padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', width: 'fit-content' },
   statusDot: (color) => ({ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color }),
+  rangeText: { marginTop: '8px', fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' },
   resultPanel: { flex: '1 1 30%', minWidth: '320px' },
   resultCard: { backgroundColor: '#ffffff', borderRadius: '16px', padding: '32px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', position: 'sticky', top: '32px' },
   resultHeading: { margin: '0 0 30px 0', fontSize: '18px', color: '#334155', textAlign: 'center', fontWeight: '700' },
