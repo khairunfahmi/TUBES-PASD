@@ -109,3 +109,54 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* =========================================
+   AquaMetrics AI UI Revamp Animations & Utilities
+   ========================================= */
+
+@keyframes rise {
+  0% { bottom: -10px; transform: translateX(0) scale(0.5); opacity: 0; }
+  50% { opacity: 0.8; }
+  100% { bottom: 100%; transform: translateX(-10px) scale(1.2); opacity: 0; }
+}
+
+@keyframes pulseSoft {
+  0% { box-shadow: 0 0 0 0 rgba(15, 118, 110, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(15, 118, 110, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(15, 118, 110, 0); }
+}
+
+.bubble {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  animation: rise linear infinite;
+}
+
+.pulse-anim {
+  animation: pulseSoft 2s infinite;
+}
+
+.card-hover {
+  transition: all 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px rgba(0,0,0,0.08);
+}
+
+.input-focus-ring:focus-within {
+  outline: 2px solid #0f766e;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,5 +1,11 @@
 import React, { Component } from 'react';
 
+// ============================================================
+// Konfigurasi API URL
+// Prioritas: 1. VITE_API_URL dari .env  2. Fallback ke localhost
+// ============================================================
+const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
+
 // Konfigurasi Parameter (Tetap di luar kelas karena bersifat statis/konstan)
 const featureConfig = {
   ph: { icon: '🧪', label: 'Tingkat pH', unit: 'pH', min: 6.5, max: 8.5 },
@@ -26,19 +32,48 @@ class App extends Component {
       },
       result: null,
       loading: false,
-      error: ''
+      error: '',
+      apiUrl: DEFAULT_API_URL,
+      apiStatus: 'checking' // 'checking' | 'online' | 'offline'
     };
   }
 
-  // 2. Metode Kelas: Menentukan status warna
-  getStatusColor = (key, value) => {
-    if (!value) return { text: 'Menunggu', bg: '#f8fafc', border: '#e2e8f0', color: '#94a3b8', level: 0 };
-    const num = parseFloat(value);
-    const { min, max } = featureConfig[key];
+  // Metode: Cek koneksi API saat komponen mount
+  componentDidMount() {
+    this.checkApiConnection();
+  }
 
-    if (num >= min && num <= max) return { text: 'Normal', bg: '#ecfdf5', border: '#34d399', color: '#10b981', level: 1 };
-    if (num > max * 1.5 || num < min * 0.5) return { text: 'Bahaya', bg: '#fef2f2', border: '#f87171', color: '#ef4444', level: 3 };
-    return { text: 'Waspada', bg: '#fffbeb', border: '#fbbf24', color: '#f59e0b', level: 2 };
+  // Metode: Cek apakah API tersedia
+  checkApiConnection = async () => {
+    this.setState({ apiStatus: 'checking' });
+    try {
+      const response = await fetch(this.state.apiUrl + '/', { 
+        method: 'GET',
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+        signal: AbortSignal.timeout(5000) 
+      });
+      if (response.ok) {
+        this.setState({ apiStatus: 'online' });
+      } else {
+        this.setState({ apiStatus: 'offline' });
+      }
+    } catch {
+      this.setState({ apiStatus: 'offline' });
+    }
+  };
+
+
+  // 2. Metode Kelas: Menentukan status warna (Validasi Visual)
+  getStatusColor = (key, value) => {
+    const { min, max } = featureConfig[key];
+    const tooltipText = `Batas aman: ${min} - ${max} ${featureConfig[key].unit}`;
+    
+    if (!value) return { text: 'Menunggu', bg: '#f8fafc', border: '#e2e8f0', color: '#94a3b8', level: 0, tooltip: tooltipText };
+    
+    const num = parseFloat(value);
+    if (num >= min && num <= max) return { text: 'Aman', bg: '#ecfdf5', border: '#10b981', color: '#059669', level: 1, tooltip: tooltipText };
+    
+    return { text: 'Tidak Aman', bg: '#fef2f2', border: '#ef4444', color: '#dc2626', level: 2, tooltip: tooltipText };
   };
 
   // 3. Metode Kelas: Menangani perubahan input
@@ -73,9 +108,12 @@ class App extends Component {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/predict', {
+      const response = await fetch(this.state.apiUrl + '/predict', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify(payload),
       });
 
@@ -93,44 +131,63 @@ class App extends Component {
   // 5. Metode Render (Wajib dalam Class Component)
   render() {
     // Destructuring state agar lebih mudah dipanggil
-    const { formData, result, loading, error } = this.state;
+    const { formData, result, loading, error, apiStatus } = this.state;
 
     // Menghitung persentase botol
     const filledFieldsCount = Object.values(formData).filter(v => v !== '').length;
     const fillPercentage = filledFieldsCount === 0 ? 5 : (filledFieldsCount / 9) * 90;
 
-    // Logika warna air
-    let waterGradient = 'linear-gradient(180deg, #38bdf8 0%, #0369a1 100%)';
-    let waterGlow = 'rgba(56, 189, 248, 0.4)';
-
-    if (result === 1) {
-      waterGradient = 'linear-gradient(180deg, #2dd4bf 0%, #047857 100%)';
-      waterGlow = 'rgba(45, 212, 191, 0.6)';
-    } else if (result === 0) {
-      waterGradient = 'linear-gradient(180deg, #ef4444 0%, #450a0a 100%)';
-      waterGlow = 'rgba(239, 68, 68, 0.6)';
-    } else {
-      let maxDangerLevel = 0;
-      for (const key in formData) {
-        if (formData[key] !== '') {
-          const status = this.getStatusColor(key, formData[key]);
-          if (status.level > maxDangerLevel) maxDangerLevel = status.level;
-        }
-      }
-      if (maxDangerLevel === 3) {
-        waterGradient = 'linear-gradient(180deg, #f87171 0%, #7f1d1d 100%)';
-        waterGlow = 'rgba(248, 113, 113, 0.5)';
-      } else if (maxDangerLevel === 2) {
-        waterGradient = 'linear-gradient(180deg, #facc15 0%, #a16207 100%)';
-        waterGlow = 'rgba(250, 204, 21, 0.5)';
+    // Logika warna air berdasarkan agregat validasi visual
+    let waterGradient = 'linear-gradient(180deg, #2dd4bf 0%, #0f766e 100%)'; // teal aman
+    let waterGlow = 'rgba(45, 212, 191, 0.5)';
+    
+    let dangerCount = 0;
+    for (const key in formData) {
+      if (formData[key] !== '') {
+        const status = this.getStatusColor(key, formData[key]);
+        if (status.level > 1) dangerCount++;
       }
     }
+
+    if (dangerCount > 3) {
+      waterGradient = 'linear-gradient(180deg, #fca5a5 0%, #be123c 100%)'; // merah muda
+      waterGlow = 'rgba(252, 165, 165, 0.5)';
+    } else if (dangerCount > 0) {
+      waterGradient = 'linear-gradient(180deg, #fbbf24 0%, #b45309 100%)'; // amber
+      waterGlow = 'rgba(251, 191, 36, 0.5)';
+    } else if (filledFieldsCount === 0) {
+      waterGradient = 'linear-gradient(180deg, #38bdf8 0%, #0369a1 100%)'; // biru default
+      waterGlow = 'rgba(56, 189, 248, 0.4)';
+    }
+
+    // Status koneksi API
+    const statusConfig = {
+      checking: { color: '#f59e0b', text: '⏳ Memeriksa...', bg: '#fffbeb' },
+      online: { color: '#10b981', text: '🟢 API Terhubung', bg: '#ecfdf5' },
+      offline: { color: '#ef4444', text: '🔴 API Offline', bg: '#fef2f2' }
+    };
+    const currentStatus = statusConfig[apiStatus];
 
     return (
       <div style={styles.dashboard}>
         <header style={styles.header}>
           <div style={styles.logo}>💧 AquaMetrics AI</div>
-          <div style={styles.nav}>Monitoring Kualitas Air Real-time</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Status Koneksi API */}
+            <div 
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '6px 14px', borderRadius: '20px', fontSize: '13px',
+                fontWeight: '600', transition: 'all 0.2s',
+                backgroundColor: currentStatus.bg, color: currentStatus.color,
+                border: `1px solid ${currentStatus.color}20`,
+                boxShadow: apiStatus === 'online' ? '0 0 10px rgba(16, 185, 129, 0.2)' : 'none'
+              }}
+            >
+              {currentStatus.text}
+            </div>
+            <div style={styles.nav}>Monitoring Kualitas Air Real-time</div>
+          </div>
         </header>
 
         <div style={styles.mainContent}>
@@ -145,13 +202,21 @@ class App extends Component {
                 {Object.keys(formData).map((key) => {
                   const status = this.getStatusColor(key, formData[key]);
                   return (
-                    <div key={key} style={{ ...styles.card, borderColor: status.border }}>
+                    <div key={key} className="card-hover" style={{ ...styles.card, borderColor: status.border }}>
                       <div style={styles.cardHeader}>
                         <span style={styles.cardIcon}>{featureConfig[key].icon}</span>
-                        <span style={styles.cardLabel}>{featureConfig[key].label}</span>
+                        <span style={styles.cardLabel}>
+                          {featureConfig[key].label}
+                          <span 
+                            title={status.tooltip} 
+                            style={{ marginLeft: '6px', cursor: 'help', color: '#94a3b8', fontSize: '12px' }}
+                          >
+                            ⓘ
+                          </span>
+                        </span>
                       </div>
 
-                      <div style={styles.inputWrapper}>
+                      <div className="input-focus-ring" style={styles.inputWrapper}>
                         <input
                           type="number" step="any" name={key}
                           value={formData[key]} onChange={this.handleChange}
@@ -186,6 +251,16 @@ class App extends Component {
                     boxShadow: `0 -5px 20px ${waterGlow}`,
                   }}>
                     <div style={styles.waterSurface}></div>
+                    {/* Animasi Gelembung Air */}
+                    {fillPercentage > 5 && Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="bubble" style={{
+                        width: `${Math.random() * 6 + 4}px`,
+                        height: `${Math.random() * 6 + 4}px`,
+                        left: `${Math.random() * 80 + 10}%`,
+                        animationDuration: `${Math.random() * 1.5 + 1.5}s`,
+                        animationDelay: `${Math.random() * 1.5}s`
+                      }}></div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -203,10 +278,17 @@ class App extends Component {
 
                 <button
                   type="submit" form="water-form" disabled={loading}
+                  className={loading ? "pulse-anim" : ""}
                   style={{ ...styles.runButton, ...(loading ? styles.buttonDisabled : {}) }}
                 >
-                  {loading ? '🧪 Model sedang memproses...' : 'Jalankan Analisis AI 🚀'}
+                  {loading ? '⏳ Menganalisis...' : 'Jalankan Analisis AI 🚀'}
                 </button>
+                
+                {filledFieldsCount < 9 && !result && !loading && (
+                  <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '12px', transition: 'all 0.3s' }}>
+                    💡 Lengkapi semua parameter dulu untuk analisis akurat
+                  </p>
+                )}
               </div>
             </div>
           </div>
